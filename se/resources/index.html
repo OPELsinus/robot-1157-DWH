@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>SE</title>
+    <link href="{{ url_for('static', filename='favicon.png') }}" rel="shortcut icon">
+    <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.css') }}" rel="stylesheet">
+<!--    <link href="bootstrap/css/bootstrap.css" rel="stylesheet">-->
+    <style>
+    ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+    }
+
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+        background: #1e1e1e;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: darkgray;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        cursor: pointer;
+
+        background: gainsboro;
+    }
+    </style>
+</head>
+
+<body style="height: 100vh; background-color: #010101;">
+<div class="container-fluid p-1 overflow-hidden">
+    <div class="row">
+        <div class="col-auto pe-1">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" value="Get" name="get">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" value="Check Element" name="check">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" value="Check Selector" name="alt_check">
+        </div>
+        <div class="col d-grid ps-0 pe-1">
+            <input type="text" class="form-control btn-outline-dark btn-sm text-muted mb-1 bg-transparent" disabled name="status">
+        </div>
+        <div class="col-auto ps-0">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" value="Set as parent" name="set">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" value="Clean" name="clean">
+        </div>
+    </div>
+    <div class="row">
+        <div class="col d-grid">
+            <input type="text" class="form-control btn-outline-dark btn-sm text-light mb-1 bg-transparent" placeholder="command line" name="command">
+        </div>
+    </div>
+    <div class="row">
+        <div class="col pe-1">
+            <textarea class="form-control btn-outline-dark btn-sm text-light bg-transparent" placeholder="selector"
+                      style="resize: none; height: 100%" name="py_selector"></textarea>
+        </div>
+        <div class="col-auto d-grid ps-0">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" title="title" value="title">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" title="class_name" value="class_name">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" title="control_type" value="control_type">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" title="visible_only" value="visible_only">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light mb-1" title="enabled_only" value="enabled_only">
+            <input type="button" class="btn btn-outline-dark btn-sm text-light" title="found_index" value="found_index">
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='socketio/socket.io.js') }}" crossorigin="anonymous"></script>
+<script src="{{ url_for('static', filename='main.js') }}" crossorigin="anonymous"></script>
+</body>
+
+</html>
