@@ -1,33 +1,82 @@
 import ctypes
+import inspect
 import json
+import logging
 import os
 from contextlib import suppress
 from pathlib import Path
 from time import sleep
-from typing import Union, List
 
 import psutil
 from pywinauto import win32functions
 from pywinauto.controls.uiawrapper import UIAWrapper
-from pywinauto.timings import wait_until_passes, wait_until
+from pywinauto.timings import wait_until_passes
+from pywinauto.win32structures import RECT
 from selenium import webdriver
-from selenium.webdriver import ChromeOptions, ActionChains, Keys
+from selenium.webdriver import ChromeOptions
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.webdriver import WebDriver
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.select import Select
-from selenium.webdriver.support.wait import WebDriverWait
-from win32api import GetMonitorInfo, MonitorFromPoint
-
-from config import process_list_path
-from tools import find_elements, kill_process_list
-if ctypes.windll.user32.GetKeyboardLayout(0) != 67699721:
-    __err__ = 'Смените раскладку на ENG'
-    raise Exception(__err__)
+from selenium.webdriver.support.ui import WebDriverWait
 
 
-# ? tested
+def try_except_decorator(func):
+    def wrapper(*args, **kwargs):
+        logger = args[0].logger if getattr(args[0], 'logger') else logging.getLogger()
+        if 'log' in kwargs.keys():
+            log = kwargs['log']
+            del kwargs['log']
+        else:
+            log = True
+        if 'skip_error' in kwargs.keys():
+            skip_error = kwargs['skip_error']
+            del kwargs['skip_error']
+        else:
+            skip_error = False
+        skip_error_str = f'skip_error={skip_error}'
+        stack = inspect.stack()[1]
+        file_name = Path(stack.filename).name
+        line_num = stack.lineno
+        code_context = [", ".join([str(i) for i in args[1:]]), str(kwargs)[1:-1]]
+        code_context = f'{func.__name__}({", ".join([i for i in code_context if i != ""])})'
+        result = None
+        try:
+            result = func(*args, **kwargs)
+            if log:
+                logger.debug(f'success||{skip_error_str}||{file_name}->line {str(line_num)}->{code_context}')
+            return result
+        except Exception as e:
+            sttr = f'failed||{skip_error_str}||{file_name}->line {str(line_num)}->{code_context} - {str(e)}'
+            if log:
+                logger.debug(sttr)
+            if not skip_error:
+                raise e
+        return result
+
+    return wrapper
+
+
+def find_elements(timeout=30, **selector):
+    from pywinauto.findwindows import find_elements
+    from pywinauto.controls.uiawrapper import UIAWrapper
+    from pywinauto.timings import wait_until_passes
+
+    selector['top_level_only'] = selector['top_level_only'] if 'top_level_only' in selector else False
+
+    def func():
+        all_elements = find_elements(backend="uia", **selector)
+        all_elements = [UIAWrapper(e) for e in all_elements]
+        if not len(all_elements):
+            raise Exception('not found')
+        return all_elements
+
+    return wait_until_passes(timeout, 0.05, func)
+
+
 class AppKeys:
     def __init__(self):
         pass
@@ -95,8 +144,6 @@ class AppKeys:
     F12 = '{VK_F12}'
     COMMAND = CONTROL
 
-    CLEAN = '{VK_HOME}+{VK_END}{VK_DELETE}{VK_HOME}'
-
 
 class App:
     keys = AppKeys
@@ -104,49 +151,18 @@ class App:
     class Element:
         keys = AppKeys
 
-        def __init__(self, element: UIAWrapper, debug=False, logger=None):
-            self.element = element
-            self.debug = debug
+        def __init__(self, element, logger=None):
+            self.element: UIAWrapper = element
             self.logger = logger
+            self.keys.CLEAR = '{VK_HOME}+{VK_END}{VK_DELETE}{VK_HOME}'
+            if not logger:
+                basic_format = '%(asctime)s||%(levelname)s||%(message)s'
+                date_format = '%Y-%m-%d,%H:%M:%S'
+                logging.basicConfig(level=logging.DEBUG, format=basic_format, datefmt=date_format)
 
-        # ? tested
-        def __repr__(self):
-            return self.element.__repr__()
-
-        # ? tested
-        def parent(self, count=1):
-            element = self.element
-            for i in range(count):
-                if element.parent():
-                    element_ = element.parent()
-                    try_count = 10
-                    while try_count > 0:
-                        if element_.element_info.control_type is not None:
-                            break
-                        sleep(0.5)
-                        element_ = element.parent()
-                    if try_count <= 0:
-                        raise RobotException('Parent is None', 'self.parent')
-                    element = element_
-                else:
-                    break
-                sleep(0.1)
-            return App.Element(element, debug=self.debug)
-
-        # ? tested
-        def draw_outline(self) -> None:
-            return self.element.draw_outline()
-
-        # ? tested
-        def close(self) -> None:
-            return self.element.close()
-
-        # ? tested
-        def set_focus(self) -> None:
-            return self.element.set_focus()
-
-        # ? tested
-        def click(self, coords=(None, None), double=False, right=False, set_focus=False) -> None:
+        @try_except_decorator
+        def click(self, double=False, right=False, coords=(None, None), delay=0, set_focus=False):
+            sleep(delay)
             if set_focus:
                 self.element.set_focus()
             if not right:
@@ -154,8 +170,9 @@ class App:
             else:
                 self.element.right_click_input(coords=coords)
 
-        # ? tested
-        def select(self, item: Union[int, str], set_focus=False) -> None:
+        @try_except_decorator
+        def select(self, item: [int, str], delay=0, set_focus=False):
+            sleep(delay)
             if set_focus:
                 self.element.set_focus()
             from pywinauto.controls.uia_controls import ComboBoxWrapper
@@ -164,287 +181,168 @@ class App:
             else:
                 raise Exception('Element is not instance of ComboBoxWrapper')
 
-        # ? tested
-        def get_text(self, attr='value', set_focus=False) -> str:
+        @try_except_decorator
+        def get_text(self, attr='value', delay=0, set_focus=False):
+            sleep(delay)
             if set_focus:
                 self.element.set_focus()
-            if attr == 'text':
-                return str(' '.join(self.element.texts()))
-            elif attr == 'value':
-                return str(self.element.get_value())
+            from pywinauto.controls.uia_controls import EditWrapper
+            if isinstance(self.element, EditWrapper):
+                if attr == 'text':
+                    return str(' '.join(self.element.texts()))
+                elif attr == 'value':
+                    return str(self.element.get_value())
+            else:
+                raise Exception('Element is not instance of EditWrapper')
 
-        # ? tested
-        def set_text(self, value=None, click=False, set_focus=False) -> None:
+        @try_except_decorator
+        def set_text(self, value=None, delay=0, set_focus=False, click=False):
+            sleep(delay)
             if set_focus:
                 self.element.set_focus()
             if click:
                 self.element.click_input()
-            return self.element.set_edit_text(value)
+            from pywinauto.controls.uia_controls import EditWrapper
+            if isinstance(self.element, EditWrapper):
+                return self.element.set_edit_text(value)
+            else:
+                raise Exception('Element is not instance of EditWrapper')
 
-        # ? tested
-        def type_keys(self, *value, click=False, clear=False, protect_first=False, set_focus=False) -> None:
+        @try_except_decorator
+        def type_keys(self, *value, delay=0, set_focus=True, clear=False, click=False, protect_first=False):
             def replace(string):
                 replace_list = ['(', ')', '{', '}', '^', '%', '+']
                 string = ''.join([c if c not in replace_list else '{' + c + '}' for c in string])
                 return string
 
+            sleep(delay)
+            if set_focus:
+                self.element.set_focus()
             if click:
                 self.element.click_input()
             if clear:
-                self.element.type_keys(self.keys.CLEAR, set_foreground=set_focus)
+                self.element.type_keys(self.keys.CLEAR)
             if protect_first:
                 keys = ''.join(str(v) if n else replace(str(v)) for n, v in enumerate(value))
             else:
                 keys = ''.join(str(v) for v in value)
-            self.element.type_keys(keys, pause=0.03, with_spaces=True, with_tabs=True, with_newlines=True,
-                                   set_foreground=set_focus)
+            self.element.type_keys(keys, pause=0.05, with_spaces=True, with_tabs=True,
+                                   with_newlines=True, set_foreground=set_focus)
 
-        # TODO TEST
-        def find_elements(self, selector, timeout: Union[int, float] = 60):
-            selector['parent'] = self.element
-            try:
-                elements = find_elements(**selector, timeout=timeout)
-            except (Exception,):
-                elements = list()
-            if not len(elements):
-                raise Exception('Elements not found')
-            if self.debug:
-                for element in elements:
-                    element.draw_outline()
-            return [App.Element(element, debug=self.debug, logger=self.logger) for element in elements]
-
-        # TODO TEST
-        def find_element(self, selector, timeout: Union[int, float] = 60):
-            selector['parent'] = self.element
-            try:
-                elements = find_elements(**selector, timeout=timeout)
-            except (Exception,):
-                elements = list()
-            if not len(elements):
-                raise Exception('Element not found')
-            element = elements[0]
-            if self.debug:
-                element.draw_outline()
-            return App.Element(element, debug=self.debug, logger=self.logger)
-
-        # TODO TEST
-        def wait_element(self, selector, timeout: Union[int, float] = 60, until=True, raise_if_false=False) -> bool:
-            selector['parent'] = self.element
-
-            def function():
-                try:
-                    elements = find_elements(**selector, timeout=0)
-                    if len(elements) > 0:
-                        flag = True
-                        if self.debug:
-                            elements[0].draw_outline()
-                    else:
-                        flag = False
-                except (Exception,):
-                    flag = False
-
-                if flag != until:
-                    raise Exception(f'Element not {"appeared" if until else "disappeared"}')
-
-            try:
-                wait_until_passes(timeout, 0.1, function)
-                result = True
-            except (Exception,):
-                result = False
-
-            if raise_if_false and not result:
-                raise RobotException(f'{selector} not disappeared', 'wait_element')
-            return result
-
-    def __init__(self, path: Union[str, Path], timeout: Union[int, float] = 60, debug=False, logger=None):
+    def __init__(self, path, logger=None, timeout=60, process_registry=None):
         self.path = path
+        self.logger = logging.getLogger(logger) or logging.getLogger()
+        if not logger:
+            basic_format = '%(asctime)s||%(levelname)s||%(message)s'
+            date_format = '%Y-%m-%d,%H:%M:%S'
+            logging.basicConfig(level=logging.DEBUG, format=basic_format, datefmt=date_format)
+
         self.timeout = timeout
-        self.debug = debug
-        self.logger = logger
+        self.process_registry = process_registry
+        self.process_list = list()
+        self.window_element_info = None
 
-        # noinspection PyTypeChecker
-        _root: App.Element = None
-        self._stack = {0: _root}
-        self._highest_len = 1
-        self._current_index = 0
-
-    # ------------------------------------------------------------------------------------------------------------------
-    # ? tested
-    def run(self) -> None:
-        self.quit()
+    @try_except_decorator
+    def run(self):
+        self.quit(skip_error=True, log=False)
         os.system(f'start "" "{self.path.__str__()}"')
 
-    # tested
-    @classmethod
-    def quit(cls) -> None:
-        kill_process_list()
+    @try_except_decorator
+    def quit(self):
+        def kill(parent_):
+            if parent_.is_running():
+                children_ = parent_.children(recursive=True)
+                for child_ in children_:
+                    if child_.is_running():
+                        child_.kill()
+            if parent_.is_running():
+                parent_.kill()
+
+        for process in self.process_list:
+            wait_until_passes(5, 0.05, kill, Exception, process)
+
+        if self.process_registry:
+            with open(str(self.process_registry), 'r', encoding='utf-8') as fp:
+                data = json.load(fp)
+            for proc in psutil.process_iter():
+                if proc.name() in data:
+                    wait_until_passes(5, 0.05, kill, Exception, proc)
         sleep(3)
 
-    # ------------------------------------------------------------------------------------------------------------------
-    # ? tested
-    @property
-    def root(self) -> Element:
-        return self._stack[0]
-
-    # ? tested
-    @root.setter
-    def root(self, root_window: Element) -> None:
-        self._stack[0] = root_window
-
-    # ------------------------------------------------------------------------------------------------------------------
-    # ? tested
-    @property
-    def parent(self) -> Element:
-        return self._stack[self._current_index]
-
-    # ? tested
-    @parent.setter
-    def parent(self, window: Element) -> None:
-        self._stack[self._current_index] = window
-
-    # ? tested
-    def _parent_switch_actions(self, set_focus, maximize, resize) -> None:
-        target = self._stack[self._current_index]
-        if set_focus:
-            with suppress(Exception):
-                target.element.set_focus()
-        if maximize:
-            with suppress(Exception):
-                target.element.maximize()
-        if resize:
-            with suppress(Exception):
-                r = GetMonitorInfo(MonitorFromPoint((0, 0))).get("Work")
-                h = target.element.element_info.handle
-                win32functions.MoveWindow(h, r[0], r[1], r[2], r[3] - 50, True)
-
-    # ? tested
-    def _parent_switch_serialize_process_list(self) -> None:
-        target = self._stack[self._current_index]
-        process = psutil.Process(target.element.element_info.process_id).name()
-        if process_list_path.is_file():
-            with open(process_list_path.__str__(), 'r', encoding='utf-8') as pl_fp:
-                process_list = json.load(pl_fp)
+    @try_except_decorator
+    def switch(self, selector, timeout=None, alt_maximize=False):
+        if isinstance(selector, App.Element):
+            result = selector
+        elif isinstance(selector, dict):
+            if 'parent' not in selector:
+                selector['parent'] = None
+            result = self.find_element(selector, timeout=timeout, skip_error=False, log=False)
         else:
-            process_list = list()
-        if process not in process_list:
-            process_list.append(process)
-            with open(process_list_path.__str__(), 'w+', encoding='utf-8') as pl_fp:
-                json.dump(process_list, pl_fp, ensure_ascii=False)
+            raise Exception('Selector type unknown')
+        with suppress(Exception):
+            result.element.set_focus()
+            result.element.maximize()
+            if alt_maximize:
+                if self.window_element_info:
+                    r = self.window_element_info.rectangle
+                else:
+                    user32 = ctypes.windll.user32
+                    r = RECT(0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(17))
+                win32functions.MoveWindow(result.element.element_info.handle, r.left, r.top, r.right, r.bottom, True)
 
-    # ? tested
-    def parent_switch(self, target: Union[Element, dict], timeout=None, set_focus=False, maximize=False,
-                      resize=False) -> Element:
-        timeout = timeout if timeout is not None else self.timeout
-        # * target setting
-        if isinstance(target, App.Element):
-            pass
-        elif isinstance(target, dict):
-            if 'parent' not in target:
-                target['parent'] = None
-            target = self.find_element(target, timeout=timeout)
-        else:
-            raise Exception(f'{type(target)} is not supported')
+        self.window_element_info = result.element.element_info
+        process = psutil.Process(self.window_element_info.process_id)
+        if process not in self.process_list:
+            self.process_list.append(process)
+        if self.process_registry is not None:
+            if self.process_registry.is_file():
+                with open(str(self.process_registry), 'r', encoding='utf-8') as fp:
+                    data = json.load(fp)
+            else:
+                data = list()
+            process_name = process.name()
+            if process_name not in data:
+                data.append(process_name)
+                with open(str(self.process_registry), 'w', encoding='utf-8') as fp:
+                    json.dump(data, fp, ensure_ascii=False)
 
-        # * navigation
-        self._stack[self._current_index + 1] = target
-        self._current_index += 1
-        self._highest_len = self._current_index + 1
-        for i in [k for k in self._stack.keys() if k > self._current_index]:
-            del self._stack[i]
-
-        # * actions
-        self._parent_switch_actions(set_focus, maximize, resize)
-        self._parent_switch_serialize_process_list()
-
-        target = self._stack[self._current_index]
-        if self.debug:
-            target.element.draw_outline()
-        if self.logger:
-            self.logger.info('-->', target)
-        return target
-
-    # ? tested
-    def parent_back(self, steps: int, set_focus=False, maximize=False, resize=False) -> Element:
-        index_to_visit = max(0, self._current_index - steps)
-        self._current_index = index_to_visit
-
-        # * actions
-        self._parent_switch_actions(set_focus, maximize, resize)
-        target = self._stack[self._current_index]
-        if self.debug:
-            target.element.draw_outline()
-        if self.logger:
-            self.logger.info('<--', target)
-        return target
-
-    # ? tested
-    def parent_forward(self, steps: int, set_focus=False, maximize=False, resize=False) -> Element:
-        index_to_visit = min(self._highest_len - 1, self._current_index + steps)
-        self._current_index = index_to_visit
-
-        # * actions
-        self._parent_switch_actions(set_focus, maximize, resize)
-        target = self._stack[self._current_index]
-        if self.debug:
-            target.element.draw_outline()
-        if self.logger:
-            self.logger.info('-->', target)
-        return target
-
-    # ------------------------------------------------------------------------------------------------------------------
-    # ? tested
-    def find_elements(self, selector, timeout: Union[int, float] = None) -> List[Element]:
+    @try_except_decorator
+    def find_elements(self, selector, timeout=None):
         timeout = timeout if timeout is not None else self.timeout
         if 'parent' not in selector:
-            selector['parent'] = self.parent
-        if isinstance(selector['parent'], App.Element):
-            selector['parent'] = selector['parent'].element
+            selector['parent'] = self.window_element_info
         try:
             elements = find_elements(**selector, timeout=timeout)
         except (Exception,):
             elements = list()
         if not len(elements):
             raise Exception('Elements not found')
-        if self.debug:
-            for element in elements:
-                element.draw_outline()
-        return [self.Element(element, debug=self.debug, logger=self.logger) for element in elements]
+        return [self.Element(element, logger=self.logger) for element in elements]
 
-    # ? tested
-    def find_element(self, selector, timeout: Union[int, float] = None) -> Element:
+    @try_except_decorator
+    def find_element(self, selector, timeout=None):
         timeout = timeout if timeout is not None else self.timeout
         if 'parent' not in selector:
-            selector['parent'] = self.parent
-        if isinstance(selector['parent'], App.Element):
-            selector['parent'] = selector['parent'].element
+            selector['parent'] = self.window_element_info
         try:
             elements = find_elements(**selector, timeout=timeout)
         except (Exception,):
             elements = list()
         if not len(elements):
-            raise Exception('Element not found')
+            raise Exception('Elements not found')
         element = elements[0]
-        if self.debug:
-            element.draw_outline()
-        return self.Element(element, debug=self.debug, logger=self.logger)
+        return self.Element(element, logger=self.logger)
 
-    # ? tested
-    def wait_element(self, selector, timeout: Union[int, float] = None, until=True, raise_if_false=False) -> bool:
+    @try_except_decorator
+    def wait_element(self, selector, timeout=None, until=True):
         timeout = timeout if timeout is not None else self.timeout
         if 'parent' not in selector:
-            selector['parent'] = self.parent
-        if isinstance(selector['parent'], App.Element):
-            selector['parent'] = selector['parent'].element
+            selector['parent'] = self.window_element_info
 
         def function():
             try:
                 elements = find_elements(**selector, timeout=0)
-                if len(elements) > 0:
-                    flag = True
-                    if self.debug:
-                        elements[0].draw_outline()
-                else:
-                    flag = False
+                flag = len(elements) > 0
             except (Exception,):
                 flag = False
 
@@ -453,88 +351,81 @@ class App:
 
         try:
             wait_until_passes(timeout, 0.1, function)
-            result = True
+            return True
         except (Exception,):
-            result = False
-
-        if raise_if_false and not result:
-            raise RobotException(f'{selector} not disappeared', 'wait_element')
-        return result
+            return False
 
 
-# ? tested
 class Web:
     keys = Keys
 
-    # ? tested
     class Element:
         keys = Keys
 
-        def __init__(self, element, selector, by, driver):
+        def __init__(self, element, selector, by, driver, logger=None):
             self.element: WebElement = element
             self.selector = selector
             self.by = by
             self.driver: WebDriver = driver
+            self.logger = logger
+            if not logger:
+                basic_format = '%(asctime)s||%(levelname)s||%(message)s'
+                date_format = '%Y-%m-%d,%H:%M:%S'
+                logging.basicConfig(level=logging.DEBUG, format=basic_format, datefmt=date_format)
 
-        def page_load(self, url, timeout=60):
-            def body():
-                return url != self.driver.current_url
-
-            wait_until(timeout, 0.5, body)
-
-        # ? tested
+        @try_except_decorator
         def scroll(self, delay=0):
             sleep(delay)
             ActionChains(self.driver).move_to_element(self.element).perform()
 
-        # ? tested
+        @try_except_decorator
         def clear(self, delay=0):
             sleep(delay)
             self.element.clear()
 
-        # ? tested
-        def click(self, double=False, delay=0, scroll=False, page_load=False):
+        @try_except_decorator
+        def click(self, double=False, delay=0, scroll=True):
             sleep(delay)
             if scroll:
-                with suppress(Exception):
-                    self.scroll()
-            url = self.driver.current_url
+                self.scroll(skip_error=True, log=False)
             ActionChains(self.driver).double_click(self.element).perform() if double else self.element.click()
-            if page_load:
-                self.page_load(url)
 
-        # ? tested
+        @try_except_decorator
+        def wheel_click(self, delay=0, scroll=True):
+            sleep(delay)
+            if scroll:
+                self.scroll(skip_error=True, log=False)
+            self.driver.execute_script("window.open();", self.element.get_attribute("href"))
+            # ActionChains(self.driver).key_down(Keys.COMMAND).send_keys("t").key_up(Keys.COMMAND).perform()
+
+        @try_except_decorator
         def get_attr(self, attr='text', delay=0, scroll=False):
             sleep(delay)
             if scroll:
-                with suppress(Exception):
-                    self.scroll()
+                self.scroll(skip_error=True, log=False)
             return getattr(self.element, attr) if attr in ['tag_name', 'text'] else self.element.get_attribute(attr)
 
-        # ? tested
+        @try_except_decorator
         def set_attr(self, value=None, attr='value', delay=0, scroll=False):
             sleep(delay)
             if scroll:
-                with suppress(Exception):
-                    self.scroll()
+                self.scroll(skip_error=True, log=False)
             self.driver.execute_script(f"arguments[0].{attr} = arguments[1]", self.element, value)
 
-        # ? tested
-        def type_keys(self, *value, delay=0, scroll=False, clear=False):
+        @try_except_decorator
+        def type_keys(self, *value, delay=0, scroll=True, clear=True):
             sleep(delay)
             if scroll:
-                with suppress(Exception):
-                    self.scroll()
+                self.scroll(skip_error=True, log=False)
             if clear:
-                self.clear()
+                self.clear(skip_error=True, log=False)
             self.element.send_keys(*value)
 
-        # ? tested
-        def select(self, value=None, select_type='select_by_value', delay=0, scroll=False):
+        @try_except_decorator
+        def select(self, value=None, select_type='select_by_value', delay=0, scroll=True):
             sleep(delay)
             if scroll:
-                with suppress(Exception):
-                    self.scroll()
+                self.scroll(skip_error=True, log=False)
             select = Select(self.element)
             function = getattr(select, select_type)
             if value is None:
@@ -545,46 +436,14 @@ class Web:
             else:
                 return function(value)
 
-        # TODO TEST
-        def find_elements(self, selector, timeout=60, by='xpath'):
-            selector = f'.{selector}' if selector[0] != '.' else selector
-            if timeout:
-                self.wait_element(selector, timeout, by)
-            elements = self.element.find_elements(by, selector)
-            selector = f'{self.selector}{selector[1:]}'
-            elements = [Web.Element(element=element, selector=selector, by=by, driver=self.driver) for element in
-                        elements]
-            return elements
-
-        # TODO TEST
-        def find_element(self, selector, timeout=60, by='xpath'):
-            selector = f'.{selector}' if selector[0] != '.' else selector
-            if timeout:
-                self.wait_element(selector, timeout, by)
-            element = self.element.find_element(by, selector)
-            selector = f'{self.selector}{selector[1:]}'
-            element = Web.Element(element=element, selector=selector, by=by, driver=self.driver)
-            return element
-
-        # TODO TEST
-        def wait_element(self, selector, timeout=60, by='xpath', until=True):
-            selector = f'.{selector}' if selector[0] != '.' else selector
-
-            def find():
-                try:
-                    self.element.find_element(by, selector)
-                    return True
-                except (Exception,):
-                    return False
-
-            try:
-                return wait_until(timeout, 0.5, find, until)
-            except (Exception,):
-                return False
-
-    def __init__(self, path=None, download_path=None, run=False, timeout=60):
+    def __init__(self, path=None, download_path=None, logger=None, run=False, timeout=60):
         self.path = path or Path.home().joinpath(r"AppData\Local\.rpa\Chromium\chromedriver.exe")
         self.download_path = download_path or Path.home().joinpath('Downloads')
+        self.logger = logging.getLogger(logger) or logging.getLogger()
+        if not logger:
+            basic_format = '%(asctime)s||%(levelname)s||%(message)s'
+            date_format = '%Y-%m-%d,%H:%M:%S'
+            logging.basicConfig(level=logging.DEBUG, format=basic_format, datefmt=date_format)
         self.run_flag = run
         self.timeout = timeout
 
@@ -610,24 +469,26 @@ class Web:
         self.options.add_argument("--ignore-ssl-errors=yes")
         self.options.add_argument("--ignore-certificate-errors")
 
+
         # noinspection PyTypeChecker
         self.driver: WebDriver = None
 
-    # ? tested
+    @try_except_decorator
     def run(self):
-        self.quit()
+        self.quit(skip_error=False, log=False)
         self.driver = webdriver.Chrome(service=Service(self.path.__str__()), options=self.options)
+        self.driver.set_page_load_timeout(3600)
 
-    # ? tested
+    @try_except_decorator
     def quit(self):
         if self.driver:
             self.driver.quit()
 
-    # ? tested
+    @try_except_decorator
     def close(self):
         self.driver.close()
 
-    # ? tested
+    @try_except_decorator
     def switch(self, switch_type='window', switch_index=-1, frame_selector=None):
         if switch_type == 'window':
             self.driver.switch_to.window(self.driver.window_handles[switch_index])
@@ -640,33 +501,33 @@ class Web:
             self.driver.switch_to.alert.accept()
         raise Exception(f'switch_type "{switch_type}" didnt found')
 
-    # ? tested
+    @try_except_decorator
     def get(self, url):
         self.driver.get(url)
 
-    # ? tested
+    @try_except_decorator
     def find_elements(self, selector, timeout=None, event=None, by='xpath'):
         if event is None:
             event = expected_conditions.presence_of_element_located
         timeout = timeout if timeout is not None else self.timeout
         if timeout:
-            self.wait_element(selector, timeout, event, by)
+            self.wait_element(selector, timeout, event, by, log=False)
         elements = self.driver.find_elements(by, selector)
         elements = [self.Element(element=element, selector=selector, by=by, driver=self.driver) for element in elements]
         return elements
 
-    # ? tested
+    @try_except_decorator
     def find_element(self, selector, timeout=None, event=None, by='xpath'):
         if event is None:
             event = expected_conditions.presence_of_element_located
         timeout = timeout if timeout is not None else self.timeout
         if timeout:
-            self.wait_element(selector, timeout, event, by)
+            self.wait_element(selector, timeout, event, by, log=False)
         element = self.driver.find_element(by, selector)
         element = self.Element(element=element, selector=selector, by=by, driver=self.driver)
         return element
 
-    # ? tested
+    @try_except_decorator
     def wait_element(self, selector, timeout=None, event=None, by='xpath', until=True):
         if event is None:
             event = expected_conditions.presence_of_element_located
@@ -678,33 +539,3 @@ class Web:
             return True
         except (Exception,):
             return False
-
-
-# ? tested
-class BusinessException(Exception):
-    """Exception raised for business rule violations."""
-
-    def __init__(self, message, function_name, data=None):
-        self.message = message
-        self.function_name = function_name
-        self.data = data
-
-
-# ? tested
-class ApplicationException(Exception):
-    """Exception raised for application errors."""
-
-    def __init__(self, message, function_name, data=None):
-        self.message = message
-        self.function_name = function_name
-        self.data = data
-
-
-# ? tested
-class RobotException(Exception):
-    """Unexpected exceptions."""
-
-    def __init__(self, message, function_name, data=None):
-        self.message = message
-        self.function_name = function_name
-        self.data = data
