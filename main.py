@@ -132,7 +132,7 @@ if __name__ == '__main__':
     prev_date = (prev_date - datetime.timedelta(days=1))
     print(prev_date)
 
-    # sql_request(prev_date)
+    sql_request(prev_date)
 
     print('Started dividing')
 
