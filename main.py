@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
     df = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
     # curr_date = df['Day'].iloc[0]
-    curr_date = '01.06.23'
+    curr_date = datetime.datetime.now().strftime('%d.%m.%y')
     print(curr_date)
     day = int(curr_date.split('.')[0])
     month = int(curr_date.split('.')[1])
