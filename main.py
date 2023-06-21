@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -30,7 +31,7 @@ def sql_request(date):
     left join dwh_data.dim_prod_group pg1 on pg1.source_prod_id = fwb.source_product_id and  fwb.rep_date between pg1.datestart and pg1.dateend
     left join dwh_data.dim_product_list dpl on dpl.code_wares = fwb.source_product_id and current_date between dpl.datestart and dpl.dateend 
     where fwb.rep_date = '{str(date)}' and pg1.code_group_level5 in ('1398', '1399', '1417', '1437', '3951', '1745', '1746', '1747', '1754')
-    and ds.sale_obj_name = ds.sale_obj_name
+    and ds.sale_obj_name = ds.sale_obj_name and dpl.extdesc28 = 'эконом'
     group by fwb.source_product_id, pg1.name_group_level5, dpl.name_wares, dpl.extdesc28, dpl.article, ds.sale_obj_name, fwb.source_store_id
     order by dpl.name_wares;
     """)
@@ -55,16 +56,32 @@ def dividing_into_single_reports(working_path):
         pass
 
     df = pd.read_csv(os.path.join(working_path, 'all.csv'), header=None)
-    df = df.drop(df.columns[11:], axis=1)
+    # df = df.drop(df.columns[11:], axis=1)
     df.columns = ["Артикул", "Подгруппа", "Наименование товара", "Ценовой сегмент", "Филиал", "Код товара", "Код филиала", "Учётные остатки", "Фактические остатки", "Свободные остатки", "Кол-во проблемных"]
+
+    df1 = df[df['Наименование товара'].str.lower().str.contains('масло')].copy()
+    for i in range(len(df1)):
+        df1['Наименование товара'] = df1['Наименование товара'].str.replace(',', '.')
+
+        multiplier = [float(s) for s in re.findall(r'[-+]?\d*\.\d+|\d+', df1['Наименование товара'].iloc[i])]
+
+        if '0мл ' in df1['Наименование товара'].iloc[i].lower():
+            df1['Фактические остатки'].iloc[i] *= float(max(multiplier)) / 1000.0
+        else:
+            df1['Фактические остатки'].iloc[i] *= float(max(multiplier))
+
+    for i in df1.index:
+        df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[i - 2234]
+
+    print('Saving into files')
 
     for i in df['Филиал'].unique():
         df1 = df.iloc[df[df['Филиал'] == i].index]
 
-        df1.to_excel(os.path.join(working_path, f'Splitted\\{i}.xlsx'), index=False)
+        df1.to_excel(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'), index=False)
         time.sleep(1)
 
-        book = load_workbook(os.path.join(working_path, f'Splitted\\{i}.xlsx'))
+        book = load_workbook(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'))
 
         worksheet = book.active
 
@@ -75,17 +92,17 @@ def dividing_into_single_reports(working_path):
         for j, width in enumerate(column_widths):
             worksheet.column_dimensions[worksheet.cell(row=1, column=j + 1).column_letter].width = width
 
-        book.save(os.path.join(working_path, f'Splitted\\{i}.xlsx'))
+        book.save(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'))
 
 
-def archive_files():
+def archive_files(prev_date):
     folder_path = os.path.join(working_path, f'Splitted')
     try:
         os.makedirs(os.path.join(working_path, f'Splitted1'))
     except:
         pass
     destination_folder = os.path.join(working_path, f'Splitted1')
-    zip_file_name = 'Все филиалы - 1157'
+    zip_file_name = f'Все филиалы - 1157 за {prev_date}'
     zip_file_path = os.path.join(destination_folder, zip_file_name)
 
     shutil.make_archive(zip_file_path, 'zip', folder_path)
@@ -115,14 +132,14 @@ if __name__ == '__main__':
     prev_date = (prev_date - datetime.timedelta(days=1))
     print(prev_date)
 
-    sql_request(prev_date)
+    # sql_request(prev_date)
 
     print('Started dividing')
 
     dividing_into_single_reports(working_path)
 
-    filepath = archive_files()
+    filepath = archive_files(prev_date)
 
-    send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz'], subject=f'Отчёт 1157',
+    send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz'], subject=f'Отчёт 1157',
                          body='Результаты в приложении', username=smtp_author,
                          attachments=[filepath + '.zip'])
