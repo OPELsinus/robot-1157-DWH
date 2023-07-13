@@ -40,7 +40,7 @@ def sql_request(date):
 
     rows = cur.fetchall()
 
-    with open(os.path.join(download_path, 'all.csv'), 'w', newline='', encoding='utf-8') as f:
+    with open(os.path.join(working_path, 'all.csv'), 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
 
         for row in rows:
@@ -50,14 +50,14 @@ def sql_request(date):
     conn.close()
 
 
-def dividing_into_single_reports(download_path):
+def dividing_into_single_reports(working_path):
 
     try:
-        os.makedirs(os.path.join(download_path, f'Splitted'))
+        os.makedirs(os.path.join(working_path, f'Splitted'))
     except:
         pass
 
-    df = pd.read_csv(os.path.join(download_path, 'all.csv'), header=None)
+    df = pd.read_csv(os.path.join(working_path, 'all.csv'), header=None)
     # df = df.drop(df.columns[11:], axis=1)
     df.columns = ["Артикул", "Подгруппа", "Наименование товара", "Ценовой сегмент", "Филиал", "Код товара", "Код филиала", "Учётные остатки", "Фактические остатки", "Свободные остатки", "Кол-во проблемных"]
 
@@ -70,7 +70,8 @@ def dividing_into_single_reports(download_path):
         if '0мл ' in df1['Наименование товара'].iloc[i].lower():
             df1['Фактические остатки'].iloc[i] *= 1
         else:
-            df1['Фактические остатки'].iloc[i] *= float(max(multiplier))
+            if float(max(multiplier)) > 1:
+                df1['Фактические остатки'].iloc[i] *= float(max(multiplier))
 
     for i in df1.index:
         df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[i - df1['Фактические остатки'].index[0]]
@@ -80,10 +81,10 @@ def dividing_into_single_reports(download_path):
     for i in sorted(df['Филиал'].unique()):
         df1 = df.iloc[df[df['Филиал'] == i].index]
 
-        df1.to_excel(os.path.join(download_path, f'Splitted\\{i}_{prev_date}.xlsx'), index=False)
+        df1.to_excel(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'), index=False)
         time.sleep(1)
 
-        book = load_workbook(os.path.join(download_path, f'Splitted\\{i}_{prev_date}.xlsx'))
+        book = load_workbook(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'))
 
         worksheet = book.active
 
@@ -94,18 +95,18 @@ def dividing_into_single_reports(download_path):
         for j, width in enumerate(column_widths):
             worksheet.column_dimensions[worksheet.cell(row=1, column=j + 1).column_letter].width = width
 
-        book.save(os.path.join(download_path, f'Splitted\\{i}_{prev_date}.xlsx'))
+        book.save(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'))
 
 
 def archive_files(prev_date):
 
-    folder_path = os.path.join(download_path, f'Splitted')
+    folder_path = os.path.join(working_path, f'Splitted')
 
     try:
-        os.makedirs(os.path.join(download_path, f'Splitted1'))
+        os.makedirs(os.path.join(working_path, f'Splitted1'))
     except:
         pass
-    destination_folder = os.path.join(download_path, f'Splitted1')
+    destination_folder = os.path.join(working_path, f'Splitted1')
 
     zip_file_name = f'Все филиалы - 1157 за {prev_date}'
     zip_file_path = os.path.join(destination_folder, zip_file_name)
@@ -137,7 +138,7 @@ if __name__ == '__main__':
 
     print('Started dividing')
 
-    dividing_into_single_reports(download_path)
+    dividing_into_single_reports(working_path)
 
     filepath = archive_files(prev_date)
 
