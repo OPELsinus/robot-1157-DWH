@@ -7,7 +7,7 @@ from pathlib import Path
 
 import openpyxl
 
-from config import owa_username, owa_password, local_path, working_path, download_path, smtp_host, smtp_author, chat_id, bot_token
+from config import owa_username, owa_password, local_path, saving_path, download_path, smtp_host, smtp_author, chat_id, bot_token
 
 import psycopg2
 import csv
@@ -21,7 +21,6 @@ from tools import update_credentials, send_message_by_smtp, send_message_to_tg
 
 
 def sql_request(date):
-
     conn = psycopg2.connect(dbname='adb', host='172.16.10.22', port='5432',
                             user='rpa_robot', password='Qaz123123+')
 
@@ -40,7 +39,7 @@ def sql_request(date):
 
     rows = cur.fetchall()
 
-    with open(os.path.join(working_path, 'all.csv'), 'w', newline='', encoding='utf-8') as f:
+    with open(os.path.join(saving_path, 'all.csv'), 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
 
         for row in rows:
@@ -50,14 +49,13 @@ def sql_request(date):
     conn.close()
 
 
-def dividing_into_single_reports(working_path):
-
+def dividing_into_single_reports(saving_path_):
     try:
-        os.makedirs(os.path.join(working_path, f'Splitted'))
+        os.makedirs(os.path.join(saving_path_, f'Splitted'))
     except:
         pass
 
-    df = pd.read_csv(os.path.join(working_path, 'all.csv'), header=None)
+    df = pd.read_csv(os.path.join(saving_path_, 'all.csv'), header=None)
     # df = df.drop(df.columns[11:], axis=1)
     df.columns = ["Артикул", "Подгруппа", "Наименование товара", "Ценовой сегмент", "Филиал", "Код товара", "Код филиала", "Учётные остатки", "Фактические остатки", "Свободные остатки", "Кол-во проблемных"]
 
@@ -75,16 +73,16 @@ def dividing_into_single_reports(working_path):
 
     for i in df1.index:
         df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[i - df1['Фактические остатки'].index[0]]
-        
+
     print('Saving into files')
 
     for i in sorted(df['Филиал'].unique()):
         df1 = df.iloc[df[df['Филиал'] == i].index]
 
-        df1.to_excel(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'), index=False)
+        df1.to_excel(os.path.join(saving_path_, f'Splitted\\{i}_{prev_date}.xlsx'), index=False)
         time.sleep(1)
 
-        book = load_workbook(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'))
+        book = load_workbook(os.path.join(saving_path_, f'Splitted\\{i}_{prev_date}.xlsx'))
 
         worksheet = book.active
 
@@ -95,18 +93,18 @@ def dividing_into_single_reports(working_path):
         for j, width in enumerate(column_widths):
             worksheet.column_dimensions[worksheet.cell(row=1, column=j + 1).column_letter].width = width
 
-        book.save(os.path.join(working_path, f'Splitted\\{i}_{prev_date}.xlsx'))
+        book.save(os.path.join(saving_path_, f'Splitted\\{i}_{prev_date}.xlsx'))
 
 
 def archive_files(prev_date):
 
-    folder_path = os.path.join(working_path, f'Splitted')
+    folder_path = os.path.join(saving_path, f'Splitted')
 
     try:
-        os.makedirs(os.path.join(working_path, f'Splitted1'))
+        os.makedirs(os.path.join(saving_path, f'Splitted1'))
     except:
         pass
-    destination_folder = os.path.join(working_path, f'Splitted1')
+    destination_folder = os.path.join(saving_path, f'Splitted1')
 
     zip_file_name = f'Все филиалы - 1157 за {prev_date}'
     zip_file_path = os.path.join(destination_folder, zip_file_name)
@@ -117,8 +115,7 @@ def archive_files(prev_date):
 
 
 if __name__ == '__main__':
-
-    # print(working_path)
+    # print(saving_path)
 
     update_credentials(Path(r'\\172.16.8.87\d'), owa_username, owa_password)
 
@@ -138,7 +135,7 @@ if __name__ == '__main__':
 
     print('Started dividing')
 
-    dividing_into_single_reports(working_path)
+    dividing_into_single_reports(saving_path)
 
     filepath = archive_files(prev_date)
 

@@ -345,4 +345,4 @@ class PostHandler(logging.Handler):
 
     def emit(self, record):
         data = self.format(record)
-        requests.post(self.url, json=data, verify=False)
+        # requests.post(self.url, json=data, verify=False)
