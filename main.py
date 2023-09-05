@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 import openpyxl
@@ -119,6 +120,13 @@ if __name__ == '__main__':
 
     update_credentials(Path(r'\\172.16.8.87\d'), owa_username, owa_password)
 
+    with suppress(Exception):
+        shutil.rmtree(os.path.join(saving_path, 'Splitted'))
+    with suppress(Exception):
+        shutil.rmtree(os.path.join(saving_path, 'Splitted1'))
+    with suppress(Exception):
+        Path.unlink(Path(os.path.join(saving_path, 'all.csv')))
+
     df = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
     # curr_date = df['Day'].iloc[0]
     curr_date = datetime.datetime.now().strftime('%d.%m.%y')
@@ -139,10 +147,10 @@ if __name__ == '__main__':
 
     filepath = archive_files(prev_date)
 
-    send_message_to_tg(bot_token=bot_token, message=f"Сегодня: {curr_date}\nОтрабатывал за: {prev_date.strftime('%d.%m.%y')}\nДата создания zip файла:\n{time.ctime(os.path.getctime(filepath + '.zip'))}", chat_id=chat_id)
-
-    send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz', 'Narymbayeva@magnum.kz', 'KALDYBEK.B@magnum.kz', 'Sarieva@magnum.kz'], subject=f'Отчёт 1157 за {prev_date.strftime("%d.%m.%Y")}',
-                         body='Результаты в приложении', username=smtp_author,
-                         attachments=[filepath + '.zip'])
-
-    Path(filepath + '.zip').unlink()
+    # send_message_to_tg(bot_token=bot_token, message=f"Сегодня: {curr_date}\nОтрабатывал за: {prev_date.strftime('%d.%m.%y')}\nДата создания zip файла:\n{time.ctime(os.path.getctime(filepath + '.zip'))}", chat_id=chat_id)
+    #
+    # send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz', 'Narymbayeva@magnum.kz', 'KALDYBEK.B@magnum.kz', 'Sarieva@magnum.kz'], subject=f'Отчёт 1157 за {prev_date.strftime("%d.%m.%Y")}',
+    #                      body='Результаты в приложении', username=smtp_author,
+    #                      attachments=[filepath + '.zip'])
+    #
+    # Path(filepath + '.zip').unlink()
