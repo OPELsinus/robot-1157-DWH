@@ -21,7 +21,7 @@ import pandas as pd
 from tools import update_credentials, send_message_by_smtp, send_message_to_tg
 
 
-def sql_request(date):
+def sql_request(start_date, end_date):
     conn = psycopg2.connect(dbname='adb', host='172.16.10.22', port='5432',
                             user='rpa_robot', password='Qaz123123+')
 
@@ -32,7 +32,7 @@ def sql_request(date):
     left join dwh_data.dim_store ds on ds.source_store_id = fwb.source_store_id and current_date between ds.datestart and ds.dateend 
     left join dwh_data.dim_prod_group pg1 on pg1.source_prod_id = fwb.source_product_id and  fwb.rep_date between pg1.datestart and pg1.dateend
     left join dwh_data.dim_product_list dpl on dpl.code_wares = fwb.source_product_id and current_date between dpl.datestart and dpl.dateend 
-    where fwb.rep_date = '{str(date)}' and pg1.code_group_level5 in ('1398', '1399', '1417', '1437', '3951', '1745', '1746', '1747', '1754')
+    where fwb.rep_date = '{end_date}' and pg1.code_group_level5 in ('1398', '1399', '1417', '1437', '3951', '1745', '1746', '1747', '1754')
     and ds.sale_obj_name = ds.sale_obj_name and dpl.extdesc28 = 'эконом'
     group by fwb.source_product_id, pg1.name_group_level5, dpl.name_wares, dpl.extdesc28, dpl.article, ds.sale_obj_name, fwb.source_store_id
     order by dpl.name_wares;
@@ -46,11 +46,14 @@ def sql_request(date):
         for row in rows:
             writer.writerow(row)
 
+    df = pd.DataFrame(rows)
+    df.to_excel(os.path.join(saving_path, 'all1.xlsx'))
+
     cur.close()
     conn.close()
 
 
-def dividing_into_single_reports(saving_path_):
+def dividing_into_single_reports(saving_path_, date_):
     try:
         os.makedirs(os.path.join(saving_path_, f'Splitted'))
     except:
@@ -67,12 +70,18 @@ def dividing_into_single_reports(saving_path_):
         multiplier = [float(s) for s in re.findall(r'[-+]?\d*\.\d+|\d+', df1['Наименование товара'].iloc[i])]
 
         if '0мл ' in df1['Наименование товара'].iloc[i].lower():
-            df1['Фактические остатки'].iloc[i] *= 1
+            print('Before#1:', df1['Фактические остатки'].iloc[i])
+            df1['Фактические остатки'].iloc[i] /= 1000
+            print('After#1:', df1['Фактические остатки'].iloc[i])
         else:
             if float(max(multiplier)) > 1:
+                print('Before#2:', df1['Фактические остатки'].iloc[i])
                 df1['Фактические остатки'].iloc[i] *= float(max(multiplier))
+                df1['Фактические остатки'].iloc[i] /= 1000
+                print('After#2:', df1['Фактические остатки'].iloc[i], '|', float(max(multiplier)))
 
     for i in df1.index:
+
         df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[i - df1['Фактические остатки'].index[0]]
 
     print('Saving into files')
@@ -80,10 +89,10 @@ def dividing_into_single_reports(saving_path_):
     for i in sorted(df['Филиал'].unique()):
         df1 = df.iloc[df[df['Филиал'] == i].index]
 
-        df1.to_excel(os.path.join(saving_path_, f'Splitted\\{i}_{prev_date}.xlsx'), index=False)
+        df1.to_excel(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'), index=False)
         time.sleep(1)
 
-        book = load_workbook(os.path.join(saving_path_, f'Splitted\\{i}_{prev_date}.xlsx'))
+        book = load_workbook(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'))
 
         worksheet = book.active
 
@@ -94,7 +103,7 @@ def dividing_into_single_reports(saving_path_):
         for j, width in enumerate(column_widths):
             worksheet.column_dimensions[worksheet.cell(row=1, column=j + 1).column_letter].width = width
 
-        book.save(os.path.join(saving_path_, f'Splitted\\{i}_{prev_date}.xlsx'))
+        book.save(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'))
 
 
 def archive_files(prev_date):
@@ -130,22 +139,33 @@ if __name__ == '__main__':
     df = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
     # curr_date = df['Day'].iloc[0]
     curr_date = datetime.datetime.now().strftime('%d.%m.%y')
-    print(curr_date)
-    day = int(curr_date.split('.')[0])
-    month = int(curr_date.split('.')[1])
-    year = int('20' + curr_date.split('.')[2])
-    # print(datetime.date(year, month, day))
-    prev_date = datetime.date(year, month, day)
-    prev_date = (prev_date - datetime.timedelta(days=1))
-    print(prev_date)
 
-    sql_request(prev_date)
+    today = datetime.date.today()
+    today = datetime.datetime(2023, 8, 2)
+    first_day_of_current_month = datetime.date(today.year, today.month, 1)
+
+    if today.month == 12:
+        last_day_of_current_month = datetime.date(today.year + 1, 1, 1) - datetime.timedelta(days=1)
+    else:
+        last_day_of_current_month = datetime.date(today.year, today.month + 1, 1) - datetime.timedelta(days=1)
+    print(first_day_of_current_month, last_day_of_current_month)
+
+    # print(curr_date)
+    # day = int(curr_date.split('.')[0])
+    # month = int(curr_date.split('.')[1])
+    # year = int('20' + curr_date.split('.')[2])
+    # # print(datetime.date(year, month, day))
+    # prev_date = datetime.date(year, month, day)
+    # prev_date = (prev_date - datetime.timedelta(days=1))
+    # print(prev_date)
+
+    sql_request(first_day_of_current_month, last_day_of_current_month)
 
     print('Started dividing')
 
-    dividing_into_single_reports(saving_path)
+    dividing_into_single_reports(saving_path, last_day_of_current_month)
 
-    filepath = archive_files(prev_date)
+    filepath = archive_files(last_day_of_current_month)
 
     # send_message_to_tg(bot_token=bot_token, message=f"Сегодня: {curr_date}\nОтрабатывал за: {prev_date.strftime('%d.%m.%y')}\nДата создания zip файла:\n{time.ctime(os.path.getctime(filepath + '.zip'))}", chat_id=chat_id)
     #
