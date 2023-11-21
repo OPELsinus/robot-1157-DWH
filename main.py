@@ -38,6 +38,17 @@ def sql_request(start_date, end_date):
     order by dpl.name_wares;
     """)
 
+    print((f"""select dpl.article as "Артикул", pg1.name_group_level5 as "Подгруппа", dpl.name_wares as "Наименование товара", dpl.extdesc28 as "Ценовой сегмент", ds.sale_obj_name as "Филиал", fwb.source_product_id as "Код товара", fwb.source_store_id as "Код филиала", sum(quantity_warehouse_acc) as "Учётные остатки", sum(quantity_warehouse) as "Фактические остатки", sum(quantity_free) as "Свободные остатки", sum(quantity_problem) as "Кол-во проблемных"
+    from dwh_data.fact_wares_bal fwb
+    left join dwh_data.dim_store ds on ds.source_store_id = fwb.source_store_id and current_date between ds.datestart and ds.dateend 
+    left join dwh_data.dim_prod_group pg1 on pg1.source_prod_id = fwb.source_product_id and  fwb.rep_date between pg1.datestart and pg1.dateend
+    left join dwh_data.dim_product_list dpl on dpl.code_wares = fwb.source_product_id and current_date between dpl.datestart and dpl.dateend 
+    where fwb.rep_date = '{end_date}' and pg1.code_group_level5 in ('1398', '1399', '1417', '1437', '3951', '1745', '1746', '1747', '1754')
+    and ds.sale_obj_name = ds.sale_obj_name and dpl.extdesc28 = 'эконом'
+    group by fwb.source_product_id, pg1.name_group_level5, dpl.name_wares, dpl.extdesc28, dpl.article, ds.sale_obj_name, fwb.source_store_id
+    order by dpl.name_wares;
+    """))
+
     rows = cur.fetchall()
 
     with open(os.path.join(saving_path, 'all.csv'), 'w', newline='', encoding='utf-8') as f:
@@ -60,34 +71,81 @@ def dividing_into_single_reports(saving_path_, date_):
         pass
 
     df = pd.read_csv(os.path.join(saving_path_, 'all.csv'), header=None)
-    # df = df.drop(df.columns[11:], axis=1)
+    # df = df.drop(df.columns[11:], axis=1)'
     df.columns = ["Артикул", "Подгруппа", "Наименование товара", "Ценовой сегмент", "Филиал", "Код товара", "Код филиала", "Учётные остатки", "Фактические остатки", "Свободные остатки", "Кол-во проблемных"]
 
-    df1 = df[df['Наименование товара'].str.lower().str.contains('масло')].copy()
+    for i in range(len(df)):
+
+        df['Кол-во проблемных'].iloc[i] = df['Фактические остатки'].iloc[i]
+        df['Фактические остатки'].iloc[i] /= 1000
+
+    # * ---------- МАСЛО ----------
+
+    df1 = df[df['Подгруппа'].str.lower().str.contains('масло')].copy()
+
     for i in range(len(df1)):
+
         df1['Наименование товара'] = df1['Наименование товара'].str.replace(',', '.')
 
         multiplier = [float(s) for s in re.findall(r'[-+]?\d*\.\d+|\d+', df1['Наименование товара'].iloc[i])]
 
-        if '0мл ' in df1['Наименование товара'].iloc[i].lower():
-            print('Before#1:', df1['Фактические остатки'].iloc[i])
-            df1['Фактические остатки'].iloc[i] /= 1000
-            print('After#1:', df1['Фактические остатки'].iloc[i])
-        else:
-            if float(max(multiplier)) > 1:
-                print('Before#2:', df1['Фактические остатки'].iloc[i])
-                df1['Фактические остатки'].iloc[i] *= float(max(multiplier))
-                df1['Фактические остатки'].iloc[i] /= 1000
-                print('After#2:', df1['Фактические остатки'].iloc[i], '|', float(max(multiplier)))
+        multiplier_ = float(max(multiplier))
+
+        if 'мл ' in df1['Наименование товара'].iloc[i].lower() or str(df1['Наименование товара'].iloc[i].lower())[-2:] == 'мл':
+            multiplier_ /= 1000
+        if multiplier_ >= 1000:
+            multiplier_ /= 1000
+
+        # df1['Кол-во проблемных'].iloc[i] = df1['Фактические остатки'].iloc[i] * 1000
+        df1['Фактические остатки'].iloc[i] *= multiplier_ * 1000
+
+        # df1['Свободные остатки'].iloc[i] = 'lol'
+
+    # * ---------- Занесение изменений в датафрейм ----------
 
     for i in df1.index:
+        if i < df1['Фактические остатки'].index[0] or i > df1['Фактические остатки'].index[-1]:
+            pass
+        else:
+            idx_in_df1 = i - df1['Фактические остатки'].index[0]
+            if idx_in_df1 >= 0 and idx_in_df1 < len(df1['Фактические остатки']):
+                df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[idx_in_df1]
+                # df.loc[i, 'Свободные остатки'] = df1['Свободные остатки'].iloc[idx_in_df1]
+                df.loc[i, 'Кол-во проблемных'] = df1['Кол-во проблемных'].iloc[idx_in_df1]
 
-        df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[i - df1['Фактические остатки'].index[0]]
+    # * ---------- СОЛЬ ----------
+
+    df1 = df[df['Подгруппа'].str.lower().str.contains('соль')].copy()
+
+    for i in range(len(df1)):
+
+        df1['Наименование товара'] = df1['Наименование товара'].str.replace(',', '.')
+
+        # df1['Кол-во проблемных'].iloc[i] = df1['Фактические остатки'].iloc[i] * 1000
+        df1['Фактические остатки'].iloc[i] *= 1000
+
+        # df1['Свободные остатки'].iloc[i] = 'lol'
+
+    # * ---------- Занесение изменений в датафрейм ----------
+
+    for i in df1.index:
+        if i < df1['Фактические остатки'].index[0] or i > df1['Фактические остатки'].index[-1]:
+            print('skip', i, df1['Фактические остатки'].index[0], df1['Фактические остатки'].index[-1])
+            pass
+        else:
+            idx_in_df1 = i - df1['Фактические остатки'].index[0]
+            if 0 <= idx_in_df1 < len(df1['Фактические остатки']):
+                df.loc[i, 'Фактические остатки'] = df1['Фактические остатки'].iloc[idx_in_df1]
+                # df.loc[i, 'Свободные остатки'] = df1['Свободные остатки'].iloc[idx_in_df1]
+                df.loc[i, 'Кол-во проблемных'] = df1['Кол-во проблемных'].iloc[idx_in_df1]
 
     print('Saving into files')
 
     for i in sorted(df['Филиал'].unique()):
+
         df1 = df.iloc[df[df['Филиал'] == i].index]
+
+        df1.columns = ["Артикул", "Подгруппа", "Наименование товара", "Ценовой сегмент", "Филиал", "Код товара", "Код филиала", "Учётные остатки", "Фактические остатки", "Свободные остатки", "Факт остатки - ОРИГИНАЛ"]
 
         df1.to_excel(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'), index=False)
         time.sleep(1)
@@ -140,14 +198,19 @@ if __name__ == '__main__':
     # curr_date = df['Day'].iloc[0]
     curr_date = datetime.datetime.now().strftime('%d.%m.%y')
 
-    today = datetime.date.today()
-    today = datetime.datetime(2023, 8, 2)
-    first_day_of_current_month = datetime.date(today.year, today.month, 1)
+    # today = datetime.date.today()
+    # today = datetime.datetime(2023, 8, 2)
+    # first_day_of_current_month = datetime.date(today.year, today.month, 1)
+    #
+    # if today.month == 12:
+    #     last_day_of_current_month = datetime.date(today.year + 1, 1, 1) - datetime.timedelta(days=1)
+    # else:
+    #     last_day_of_current_month = datetime.date(today.year, today.month + 1, 1) - datetime.timedelta(days=1)
 
-    if today.month == 12:
-        last_day_of_current_month = datetime.date(today.year + 1, 1, 1) - datetime.timedelta(days=1)
-    else:
-        last_day_of_current_month = datetime.date(today.year, today.month + 1, 1) - datetime.timedelta(days=1)
+    today = datetime.date.today()
+    first_day_of_current_month = today - datetime.timedelta(days=31)  # datetime.date(today.year, today.month, 1)
+    last_day_of_current_month = today - datetime.timedelta(days=1)
+
     print(first_day_of_current_month, last_day_of_current_month)
 
     # print(curr_date)
@@ -161,16 +224,16 @@ if __name__ == '__main__':
 
     sql_request(first_day_of_current_month, last_day_of_current_month)
 
-    print('Started dividing')
+    send_message_to_tg(bot_token=bot_token, message='Started dividing', chat_id=chat_id)
 
     dividing_into_single_reports(saving_path, last_day_of_current_month)
 
     filepath = archive_files(last_day_of_current_month)
 
-    # send_message_to_tg(bot_token=bot_token, message=f"Сегодня: {curr_date}\nОтрабатывал за: {prev_date.strftime('%d.%m.%y')}\nДата создания zip файла:\n{time.ctime(os.path.getctime(filepath + '.zip'))}", chat_id=chat_id)
-    #
-    # send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz', 'Narymbayeva@magnum.kz', 'KALDYBEK.B@magnum.kz', 'Sarieva@magnum.kz'], subject=f'Отчёт 1157 за {prev_date.strftime("%d.%m.%Y")}',
+    send_message_to_tg(bot_token=bot_token, message=f"Сегодня: {curr_date}\nОтрабатывал за: {datetime.date.today().strftime('%d.%m.%y')}\nДата создания zip файла:\n{time.ctime(os.path.getctime(filepath + '.zip'))}", chat_id=chat_id)
+
+    # send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz', 'Narymbayeva@magnum.kz', 'KALDYBEK.B@magnum.kz', 'Sarieva@magnum.kz'], subject=f'Отчёт 1157 за {datetime.date.today().strftime("%d.%m.%Y")}',
     #                      body='Результаты в приложении', username=smtp_author,
     #                      attachments=[filepath + '.zip'])
-    #
-    # Path(filepath + '.zip').unlink()
+
+    Path(filepath + '.zip').unlink()
