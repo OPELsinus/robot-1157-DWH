@@ -8,7 +8,7 @@ from pathlib import Path
 
 import openpyxl
 
-from config import owa_username, owa_password, local_path, saving_path, download_path, smtp_host, smtp_author, chat_id, bot_token
+from config import owa_username, owa_password, local_path, saving_path, download_path, smtp_host, smtp_author, chat_id, bot_token, logger
 
 import psycopg2
 import csv
@@ -182,8 +182,59 @@ def archive_files(prev_date):
     return zip_file_path
 
 
+def is_today_start():
+
+    calendar = pd.read_excel(fr'\\vault.magnum.local\Common\Stuff\_05_Финансовый Департамент\01. Казначейство\Сверка\Сверка РОБОТ\Шаблоны для робота (не удалять)\Производственный календарь 2023.xlsx')
+
+    today_ = datetime.datetime.now().strftime('%d.%m.%y')
+
+    cur_day_index = calendar[calendar['Day'] == today_]['Type'].index[0]
+    cur_day_type = calendar[calendar['Day'] == today_]['Type'].iloc[0]
+
+    count = 0
+    day_ = None
+    found = False
+
+    for i in range(1, 31):
+
+        try:
+            day = int(calendar['Day'].iloc[cur_day_index + i].split('.')[0])
+            print(calendar['Day'].iloc[cur_day_index + i], calendar['Weekday'].iloc[cur_day_index + i], calendar['Type'].iloc[cur_day_index + i])
+
+        except:
+            day = 1
+
+        if day == 1:
+
+            for j in range(1, 6):
+                print(cur_day_index, i, j, cur_day_index + i - j)
+
+                print('---', calendar['Day'].iloc[cur_day_index + i - j], calendar['Weekday'].iloc[cur_day_index + i - j], calendar['Type'].iloc[cur_day_index + i - j])
+
+                if calendar['Type'].iloc[cur_day_index + i - j] == 'Working':
+                    count += 1
+                if count == 3:
+                    found = True
+                    day_ = calendar['Day'].iloc[cur_day_index + i - j]
+                    break
+        if found:
+            break
+
+    print(cur_day_index, cur_day_type)
+
+    print(day_)
+
+    if today_ == day_:  # * datetime.datetime.today().strftime('%d.%m.%y') == day_:
+        return True
+    else:
+        return False
+
+
 if __name__ == '__main__':
-    # print(saving_path)
+
+    if not is_today_start():
+        logger.info(f'Not working day - {datetime.date.today()}')
+        exit()
 
     update_credentials(Path(r'\\172.16.8.87\d'), owa_username, owa_password)
 
@@ -195,6 +246,7 @@ if __name__ == '__main__':
         Path.unlink(Path(os.path.join(saving_path, 'all.csv')))
 
     df = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
+    calendar = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
     # curr_date = df['Day'].iloc[0]
     curr_date = datetime.datetime.now().strftime('%d.%m.%y')
 
@@ -237,3 +289,6 @@ if __name__ == '__main__':
     #                      attachments=[filepath + '.zip'])
 
     Path(filepath + '.zip').unlink()
+
+
+

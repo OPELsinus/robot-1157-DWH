@@ -39,10 +39,10 @@ import pandas as pd
 
 calendar = pd.read_excel(fr'\\vault.magnum.local\Common\Stuff\_05_Финансовый Департамент\01. Казначейство\Сверка\Сверка РОБОТ\Шаблоны для робота (не удалять)\Производственный календарь 2023.xlsx')
 
-today = '27.03.23'
+today1 = '28.11.23'
 
-cur_day_index = calendar[calendar['Day'] == today]['Type'].index[0]
-cur_day_type = calendar[calendar['Day'] == today]['Type'].iloc[0]
+cur_day_index = calendar[calendar['Day'] == today1]['Type'].index[0]
+cur_day_type = calendar[calendar['Day'] == today1]['Type'].iloc[0]
 
 count = 0
 day_ = None
@@ -66,7 +66,7 @@ for i in range(1, 31):
 
             if calendar['Type'].iloc[cur_day_index + i - j] == 'Working':
                 count += 1
-            if count == 2:
+            if count == 3:
                 found = True
                 day_ = calendar['Day'].iloc[cur_day_index + i - j]
                 break
@@ -75,9 +75,9 @@ for i in range(1, 31):
 
 print(cur_day_index, cur_day_type)
 
-print(day_)
+print(datetime.datetime.today().strftime('%d.%m.%y'), day_)
 
-if today == day_: # * datetime.datetime.today().strftime('%d.%m.%Y') == day_:
+if datetime.datetime.today().strftime('%d.%m.%y') == day_: # * datetime.datetime.today().strftime('%d.%m.%y') == day_:
     print('processing')
 else:
     print('skipping')
