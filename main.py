@@ -284,9 +284,9 @@ if __name__ == '__main__':
 
     send_message_to_tg(bot_token=bot_token, message=f"Сегодня: {curr_date}\nОтрабатывал за: {datetime.date.today().strftime('%d.%m.%y')}\nДата создания zip файла:\n{time.ctime(os.path.getctime(filepath + '.zip'))}", chat_id=chat_id)
 
-    # send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz', 'Narymbayeva@magnum.kz', 'KALDYBEK.B@magnum.kz', 'Sarieva@magnum.kz'], subject=f'Отчёт 1157 за {datetime.date.today().strftime("%d.%m.%Y")}',
-    #                      body='Результаты в приложении', username=smtp_author,
-    #                      attachments=[filepath + '.zip'])
+    send_message_by_smtp(smtp_host, to=['Abdykarim.D@magnum.kz', 'Mukhtarova@magnum.kz'], subject=f'Отчёт 1157 за {datetime.date.today().strftime("%d.%m.%Y")}',
+                         body='Результаты в приложении', username=smtp_author,
+                         attachments=[filepath + '.zip'])
 
     Path(filepath + '.zip').unlink()
 
