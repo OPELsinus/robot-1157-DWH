@@ -8,7 +8,7 @@ from pathlib import Path
 
 import openpyxl
 
-from config import owa_username, owa_password, local_path, saving_path, download_path, smtp_host, smtp_author, chat_id, bot_token, logger
+from config import owa_username, owa_password, local_path, saving_path, download_path, smtp_host, smtp_author, chat_id, bot_token, logger, calendar_path
 
 import psycopg2
 import csv
@@ -184,7 +184,7 @@ def archive_files(prev_date):
 
 def is_today_start():
 
-    calendar = pd.read_excel(fr'\\vault.magnum.local\Common\Stuff\_05_Финансовый Департамент\01. Казначейство\Сверка\Сверка РОБОТ\Шаблоны для робота (не удалять)\Производственный календарь 2023.xlsx')
+    calendar = pd.read_excel(calendar_path)
 
     today_ = datetime.datetime.now().strftime('%d.%m.%y')
 
@@ -245,8 +245,8 @@ if __name__ == '__main__':
     with suppress(Exception):
         Path.unlink(Path(os.path.join(saving_path, 'all.csv')))
 
-    df = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
-    calendar = pd.read_excel(r'\\172.16.8.87\d\Dauren\Производственный календарь 2023.xlsx')
+    df = pd.read_excel(calendar_path)
+    calendar = pd.read_excel(calendar_path)
     # curr_date = df['Day'].iloc[0]
     curr_date = datetime.datetime.now().strftime('%d.%m.%y')
 
