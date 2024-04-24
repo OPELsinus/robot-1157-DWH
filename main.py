@@ -66,7 +66,7 @@ def sql_request(start_date, end_date):
 
 def dividing_into_single_reports(saving_path_, date_):
     try:
-        os.makedirs(os.path.join(saving_path_, f'Splitted'))
+        os.makedirs(os.path.join(saving_path_, f'Выгрузка 1157'))
     except:
         pass
 
@@ -147,10 +147,10 @@ def dividing_into_single_reports(saving_path_, date_):
 
         df1.columns = ["Артикул", "Подгруппа", "Наименование товара", "Ценовой сегмент", "Филиал", "Код товара", "Код филиала", "Учётные остатки", "Фактические остатки", "Свободные остатки", "Факт остатки - ОРИГИНАЛ"]
 
-        df1.to_excel(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'), index=False)
+        df1.to_excel(os.path.join(saving_path_, f'Выгрузка 1157\\{i}_{date_}.xlsx'), index=False)
         time.sleep(1)
 
-        book = load_workbook(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'))
+        book = load_workbook(os.path.join(saving_path_, f'Выгрузка 1157\\{i}_{date_}.xlsx'))
 
         worksheet = book.active
 
@@ -161,21 +161,21 @@ def dividing_into_single_reports(saving_path_, date_):
         for j, width in enumerate(column_widths):
             worksheet.column_dimensions[worksheet.cell(row=1, column=j + 1).column_letter].width = width
 
-        book.save(os.path.join(saving_path_, f'Splitted\\{i}_{date_}.xlsx'))
+        book.save(os.path.join(saving_path_, f'Выгрузка 1157\\{i}_{date_}.xlsx'))
 
 
 def archive_files(prev_date):
 
-    folder_path = os.path.join(saving_path, f'Splitted')
+    folder_path = os.path.join(saving_path, f'Выгрузка 1157')
 
-    try:
-        os.makedirs(os.path.join(saving_path, f'Splitted1'))
-    except:
-        pass
-    destination_folder = os.path.join(saving_path, f'Splitted1')
+    # try:
+    #     os.makedirs(os.path.join(saving_path, f'Splitted1'))
+    # except:
+    #     pass
+    # destination_folder = os.path.join(saving_path)
 
     zip_file_name = f'Все филиалы - 1157 за {prev_date}'
-    zip_file_path = os.path.join(destination_folder, zip_file_name)
+    zip_file_path = os.path.join(saving_path, zip_file_name)
 
     shutil.make_archive(zip_file_path, 'zip', folder_path)
 
@@ -239,9 +239,9 @@ if __name__ == '__main__':
     update_credentials(Path(r'\\172.16.8.87\d'), owa_username, owa_password)
 
     with suppress(Exception):
-        shutil.rmtree(os.path.join(saving_path, 'Splitted'))
+        shutil.rmtree(os.path.join(saving_path, 'Выгрузка 1157'))
     with suppress(Exception):
-        shutil.rmtree(os.path.join(saving_path, 'Splitted1'))
+        shutil.rmtree(os.path.join(saving_path, 'Splitted'))
     with suppress(Exception):
         Path.unlink(Path(os.path.join(saving_path, 'all.csv')))
 
@@ -288,7 +288,7 @@ if __name__ == '__main__':
                          body='Результаты в приложении', username=smtp_author,
                          attachments=[filepath + '.zip'])
 
-    Path(filepath + '.zip').unlink()
+    # Path(filepath + '.zip').unlink()
 
 
 
