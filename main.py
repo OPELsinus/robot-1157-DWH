@@ -232,9 +232,9 @@ def is_today_start():
 
 if __name__ == '__main__':
 
-    if not is_today_start():
-        logger.info(f'Not working day - {datetime.date.today()}')
-        exit()
+    # if not is_today_start():
+    #     logger.info(f'Not working day - {datetime.date.today()}')
+    #     exit()
 
     update_credentials(Path(r'\\172.16.8.87\d'), owa_username, owa_password)
 
